@@ -14,7 +14,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, Response, jsonify
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 2500 * 1024 * 1024  # 2.5GB max upload
 app.config['UPLOAD_FOLDER'] = Path(__file__).parent / 'uploads'
 
 SCRIPTS_DIR = Path(__file__).parent / 'scripts'
