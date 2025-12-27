@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文字起こしアプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-3xl">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">文字起こしアプリ</h1>
+
+        <form id="transcribeForm" class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <!-- Input Type Toggle -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">入力方法</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="inputType" value="url" checked class="mr-2" onchange="toggleInputType()">
+                        <span>URL</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="inputType" value="file" class="mr-2" onchange="toggleInputType()">
+                        <span>ファイルアップロード</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- URL Input -->
+            <div id="urlInput" class="mb-6">
+                <label for="url" class="block text-sm font-medium text-gray-700 mb-2">動画URL</label>
+                <input type="text" id="url" name="url"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="https://youtube.com/watch?v=... or https://vimeo.com/...">
+            </div>
+
+            <!-- File Upload -->
+            <div id="fileInput" class="mb-6 hidden">
+                <label for="file" class="block text-sm font-medium text-gray-700 mb-2">ファイル選択</label>
+                <input type="file" id="file" name="file" accept="video/*,audio/*"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <p class="text-sm text-gray-500 mt-1">動画ファイル（mp4, mov等）または音声ファイル（mp3, wav等）</p>
+            </div>
+
+            <!-- API Provider -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">APIプロバイダー</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="provider" value="groq" checked class="mr-2" onchange="updateApiKeyLink()">
+                        <span>Groq Whisper (高速)</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="provider" value="openai" class="mr-2" onchange="updateApiKeyLink()">
+                        <span>OpenAI Whisper</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- API Key -->
+            <div class="mb-6">
+                <label for="apiKey" class="block text-sm font-medium text-gray-700 mb-2">
+                    APIキー
+                    <span id="apiKeyLink" class="ml-2 text-blue-600 text-xs font-normal">
+                        (<a href="https://console.groq.com/keys" target="_blank" class="hover:underline">キーを取得</a>)
+                    </span>
+                </label>
+                <input type="password" id="apiKey" name="apiKey"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="gsk_... or sk-...">
+            </div>
+
+            <!-- Timestamps Toggle -->
+            <div class="mb-6">
+                <label class="flex items-center">
+                    <input type="checkbox" id="timestamps" name="timestamps" class="mr-2 w-4 h-4">
+                    <span class="text-sm font-medium text-gray-700">タイムスタンプを付ける</span>
+                </label>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" id="submitBtn"
+                class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                <span>文字起こし開始</span>
+            </button>
+        </form>
+
+        <!-- Progress -->
+        <div id="progress" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="loader"></div>
+                <span id="progressText" class="text-gray-700">処理中...</span>
+            </div>
+            <div id="progressLog" class="bg-gray-900 text-green-400 font-mono text-xs p-3 rounded-lg h-20 overflow-y-auto whitespace-pre-wrap"></div>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
+            <span id="errorText"></span>
+        </div>
+
+        <!-- Result -->
+        <div id="result" class="hidden bg-white rounded-lg shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">文字起こし結果</h2>
+                <div class="flex gap-2">
+                    <button onclick="copyToClipboard()"
+                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                        コピー
+                    </button>
+                    <button onclick="downloadText()"
+                        class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm">
+                        ダウンロード
+                    </button>
+                </div>
+            </div>
+            <textarea id="transcript" readonly
+                class="w-full h-96 px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-800 font-mono text-sm resize-y"></textarea>
+        </div>
+
+        <!-- Copy Notification -->
+        <div id="copyNotification" class="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg hidden">
+            クリップボードにコピーしました
+        </div>
+    </div>
+
+    <script>
+        function toggleInputType() {
+            const inputType = document.querySelector('input[name="inputType"]:checked').value;
+            document.getElementById('urlInput').classList.toggle('hidden', inputType !== 'url');
+            document.getElementById('fileInput').classList.toggle('hidden', inputType !== 'file');
+        }
+
+        function updateApiKeyLink() {
+            const provider = document.querySelector('input[name="provider"]:checked').value;
+            const linkSpan = document.getElementById('apiKeyLink');
+            if (provider === 'groq') {
+                linkSpan.innerHTML = '(<a href="https://console.groq.com/keys" target="_blank" class="hover:underline">キーを取得</a>)';
+            } else {
+                linkSpan.innerHTML = '(<a href="https://platform.openai.com/api-keys" target="_blank" class="hover:underline">キーを取得</a>)';
+            }
+        }
+
+        document.getElementById('transcribeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const progress = document.getElementById('progress');
+            const progressText = document.getElementById('progressText');
+            const error = document.getElementById('error');
+            const errorText = document.getElementById('errorText');
+            const result = document.getElementById('result');
+            const transcript = document.getElementById('transcript');
+
+            // Reset UI
+            error.classList.add('hidden');
+            result.classList.add('hidden');
+            progress.classList.remove('hidden');
+            document.getElementById('progressLog').textContent = '';
+            submitBtn.disabled = true;
+
+            const formData = new FormData();
+
+            const inputType = document.querySelector('input[name="inputType"]:checked').value;
+            if (inputType === 'url') {
+                formData.append('url', document.getElementById('url').value);
+            } else {
+                const file = document.getElementById('file').files[0];
+                if (file) {
+                    formData.append('file', file);
+                }
+            }
+
+            formData.append('api_key', document.getElementById('apiKey').value);
+            formData.append('provider', document.querySelector('input[name="provider"]:checked').value);
+            formData.append('timestamps', document.getElementById('timestamps').checked ? 'true' : 'false');
+
+            try {
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+
+                                if (data.type === 'progress') {
+                                    progressText.textContent = data.message;
+                                    // Add to log
+                                    const log = document.getElementById('progressLog');
+                                    log.textContent += data.message + '\n';
+                                    log.scrollTop = log.scrollHeight;
+                                } else if (data.type === 'complete') {
+                                    progress.classList.add('hidden');
+                                    result.classList.remove('hidden');
+                                    transcript.value = data.transcript;
+                                } else if (data.type === 'error') {
+                                    progress.classList.add('hidden');
+                                    error.classList.remove('hidden');
+                                    errorText.textContent = data.message;
+                                }
+                            } catch (e) {
+                                console.error('Parse error:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                progress.classList.add('hidden');
+                error.classList.remove('hidden');
+                errorText.textContent = 'ネットワークエラー: ' + err.message;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+
+        function copyToClipboard() {
+            const transcript = document.getElementById('transcript');
+            navigator.clipboard.writeText(transcript.value).then(() => {
+                const notification = document.getElementById('copyNotification');
+                notification.classList.remove('hidden');
+                setTimeout(() => notification.classList.add('hidden'), 2000);
+            });
+        }
+
+        function downloadText() {
+            const transcript = document.getElementById('transcript').value;
+            const blob = new Blob([transcript], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transcript_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
