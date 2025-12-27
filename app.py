@@ -136,7 +136,8 @@ def transcribe():
                         stdout_data, _ = process.communicate()
 
                         if process.returncode != 0:
-                            yield f"data: {json.dumps({'type': 'error', 'message': 'ダウンロードエラー'})}\n\n"
+                            error_detail = stderr_data if 'stderr_data' in dir() else ''
+                            yield f"data: {json.dumps({'type': 'error', 'message': f'ダウンロードエラー (code: {process.returncode})\\n{error_detail[:500]}'})}\n\n"
                             return
 
                         try:
@@ -160,7 +161,12 @@ def transcribe():
                     stdout_data, _ = process.communicate()
 
                     if process.returncode != 0:
-                        yield f"data: {json.dumps({'type': 'error', 'message': 'ダウンロードエラー'})}\n\n"
+                        # Collect all stderr output
+                        all_stderr = []
+                        for line in iter(process.stderr.readline, ''):
+                            all_stderr.append(line)
+                        stderr_text = ''.join(all_stderr)
+                        yield f"data: {json.dumps({'type': 'error', 'message': f'ダウンロードエラー (code: {process.returncode})\\n{stderr_text[:500]}'})}\n\n"
                         return
 
                     try:
@@ -195,7 +201,7 @@ def transcribe():
             stdout_data, stderr_data = process.communicate()
 
             if process.returncode != 0:
-                yield f"data: {json.dumps({'type': 'error', 'message': f'文字起こしエラー: {stderr_data[:300]}'})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': f'文字起こしエラー (code: {process.returncode})\\n{stderr_data[:500]}'})}\n\n"
                 return
 
             transcript = stdout_data

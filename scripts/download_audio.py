@@ -49,6 +49,7 @@ def download_audio(url: str, output_path: str = None, cookies_file: str = None) 
     if output_path is None:
         output_path = os.path.join(tempfile.gettempdir(), "%(title)s.%(ext)s")
 
+    # First try: standard extraction with mp3 conversion
     cmd = [
         "yt-dlp",
         "-x",  # Extract audio
@@ -68,8 +69,57 @@ def download_audio(url: str, output_path: str = None, cookies_file: str = None) 
 
     result = subprocess.run(cmd, capture_output=True, text=True)
 
+    # If failed (often with Shorts), try alternative approach
     if result.returncode != 0:
-        print(f"Error: {result.stderr}", file=sys.stderr)
+        print(f"First attempt failed, trying alternative method...", file=sys.stderr)
+
+        # Alternative: download best audio and convert with ffmpeg separately
+        temp_audio = os.path.join(tempfile.gettempdir(), f"temp_audio_{os.getpid()}")
+        cmd2 = [
+            "yt-dlp",
+            "-f", "bestaudio",  # Best audio format
+            "-o", temp_audio + ".%(ext)s",
+            "--no-playlist",
+            "--restrict-filenames",
+        ]
+        if cookies_file and os.path.exists(cookies_file):
+            cmd2.extend(["--cookies", cookies_file])
+        cmd2.append(url)
+
+        result2 = subprocess.run(cmd2, capture_output=True, text=True)
+
+        if result2.returncode != 0:
+            print(f"Error (code {result2.returncode}): {result2.stderr}", file=sys.stderr)
+            sys.exit(1)
+
+        # Find downloaded file and convert to mp3
+        temp_dir = tempfile.gettempdir()
+        for f in os.listdir(temp_dir):
+            if f.startswith(f"temp_audio_{os.getpid()}"):
+                temp_file = os.path.join(temp_dir, f)
+                print(f"Converting {f} to mp3...", file=sys.stderr)
+
+                # Convert with ffmpeg
+                convert_cmd = [
+                    "ffmpeg", "-y", "-i", temp_file,
+                    "-vn", "-acodec", "libmp3lame", "-b:a", "128k",
+                    output_path
+                ]
+                conv_result = subprocess.run(convert_cmd, capture_output=True, text=True)
+
+                # Clean up temp file
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
+
+                if conv_result.returncode != 0:
+                    print(f"Conversion error: {conv_result.stderr}", file=sys.stderr)
+                    sys.exit(1)
+
+                return output_path, title
+
+        print(f"Error: Could not find downloaded file", file=sys.stderr)
         sys.exit(1)
 
     # Find the actual output file
